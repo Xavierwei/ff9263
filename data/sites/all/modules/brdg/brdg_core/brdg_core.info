@@ -1,0 +1,6 @@
+name = BRDG Core
+description = Provide core function for brdg.
+package = brdg
+dependencies[] = rest_server
+core = 7.x
+

@@ -1,0 +1,68 @@
+#dc3 ,#dc2 ,.left_panel
+{-webkit-transition: all 800ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+   -moz-transition: all 800ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+    -ms-transition: all 800ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+     -o-transition: all 800ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+        transition: all 800ms cubic-bezier(0.770, 0.000, 0.175, 1.000); /* easeInOutQuart */}
+
+.dc1_face
+{-webkit-transition: all 1200ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+    -moz-transition: all 1200ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+    -ms-transition: all 1200ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+    -o-transition: all 1200ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+    transition: all 1200ms cubic-bezier(0.770, 0.000, 0.175, 1.000); /* easeInOutQuart */}
+
+#dc1
+{-webkit-transition: all 600ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+    -moz-transition: all 600ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+    -ms-transition: all 600ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+    -o-transition: all 600ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+    transition: all 600ms cubic-bezier(0.770, 0.000, 0.175, 1.000); /* easeInOutQuart */}
+
+a,.icon,#dc2 .btn_share,#dc2 .btn_comments, #dc2 .btn_like
+{
+	-webkit-transition: all 400ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+   -moz-transition: all 400ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+    -ms-transition: all 400ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+     -o-transition: all 400ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+        transition: all 400ms cubic-bezier(0.770, 0.000, 0.175, 1.000); /* easeInOutQuart */
+}
+#dc3_arrow
+{-webkit-transition:all 0.5s linear;-moz-transition:all 0.5s linear;transition:all 0.5s linear;}
+
+.vgrid
+{
+	-webkit-transition: all 800ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+   -moz-transition: all 800ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+    -ms-transition: all 800ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+     -o-transition: all 800ms cubic-bezier(0.770, 0.000, 0.175, 1.000);
+        transition: all 800ms cubic-bezier(0.770, 0.000, 0.175, 1.000); /* easeInOutQuart */
+}
+
+#dc2 .btn_close,#dc1 .back
+{-webkit-transition:background-color 0.3s ease-in,color 0.3s ease-in;-moz-transition:background-color 0.3s ease-in,color 0.3s ease-in;transition:background-color 0.3s ease-in,color 0.3s ease-in;}
+
+.cube1_face2,.cube1_face3,.cube2_face2,.cube2_face3,.cube3_face2,.cube3_face3
+{-webkit-transition:all 0.2s linear;-moz-transition:all 0.2s linear;transition:all 0.2s linear;}
+
+.icons_share a
+{-webkit-transition:background-color 0.2s linear;-moz-transition:background-color 0.2s linear;transition:background-color 0.2s linear;}
+
+
+.dc1_face,.dc2_bigcube_face,.city_time
+{-webkit-transition:all 0.4s linear;-moz-transition:all 0.4s linear;transition:all 0.4s linear;}
+
+
+.d1_mid_wrap
+{-webkit-transition:left 0.3s ease-in;-moz-transition:left 0.3s ease-in;transition:left 0.3s ease-in;}
+
+/*
+.vgrid .v_item
+{-webkit-transition:left 0.3s ease-in;-moz-transition:left 0.3s ease-in;transition:left 0.3s ease-in;}
+*/
+
+.home .category li a 
+{-webkit-transition:background-color 0.3s ease-in;-moz-transition:background-color 0.3s ease-in;transition:background-color 0.3s ease-in;}
+
+#qLbar
+{-webkit-transition:background-color 1s ease-out;-moz-transition:background-color 1s ease-out;transition:background-color 1s ease-out;}

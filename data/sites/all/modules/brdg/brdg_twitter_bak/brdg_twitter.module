@@ -1,0 +1,517 @@
+<?php
+/**
+ * @file
+ */
+// brdg_twitter
+
+define("TWITTER_SEARCH_URL", "http://search.twitter.com/search.json");
+define('MAX_NUM_CAN_GET', 1500);
+
+function brdg_twitter_get_app_settings() {
+	static $settings;
+	if ($settings) return $settings;
+	$settings = require_once(drupal_get_path('module', 'brdg_twitter').'/brdg_twitter.settings.php'
+		);
+	return $settings;
+}
+
+function brdg_twitter_menu() {
+	$items['twitter'] = array(
+		'page callback' => 'test_fetch_twitter',
+		'access callback' => TRUE,
+	);
+
+	return $items;
+}
+
+//not support pager.
+function test_fetch_twitter() {
+	// $user = brdg_twitter_load_drupal_user_with_screen_name('rsarver', 'twitter');
+	// dpm($user);
+	// return 'hello world';
+	$page = $_GET['page'];
+	$twitter_settings = brdg_twitter_get_app_settings();
+	$query_keywords = $twitter_settings['search_tag'];
+	foreach ($query_keywords as $keyword) {
+		$query_ret = brdg_twitter_query_entity($keyword, $page);
+	    $results = $query_ret['results'];
+	    foreach($results as $item) {
+	    	save_twitter_into_node($item);
+	    }
+	}
+	return 'Done.';
+}
+
+// Help function to load twitter api class instance.
+function brdg_twitter_connect() {
+	module_load_include('inc', 'twitter');
+	$twitter_settings = brdg_twitter_get_app_settings();
+	$twitter_account =  twitter_account_load($twitter_settings['twitter_uid']);
+	// get new twitter object.
+	return twitter_connect($twitter_account);
+}
+
+/**
+ * @reference https://dev.twitter.com/docs/api/1.1/get/search/tweets
+ * @reference https://dev.twitter.com/docs/api/1/get/search
+ * @twitter entity document https://dev.twitter.com/docs/tweet-entities
+ */
+function brdg_twitter_query_entity($q = '', $page = 1) {
+	if ($q == '') return;
+	// Load twitter include file.
+	module_load_include('inc', 'twitter');
+	// Load settings
+	$twitter_settings = brdg_twitter_get_app_settings();
+	// get new twitter object.
+	$twitter = brdg_twitter_connect();
+
+	$max_page = MAX_NUM_CAN_GET / $twitter_settings['max_num'];
+	if ($page > $max_page) {
+		$page = $max_page;
+	}
+	$params = array(
+		'q' => '#'.urlencode($q),
+		'rpp' => 150,
+		'include_entities' => TRUE,
+		'with_twitter_user_id' => TRUE,
+		'page' => $page
+	);
+	$query_params = http_build_query($params);
+	$url = TWITTER_SEARCH_URL.'?'.$query_params;
+	//$url = 'http://search.twitter.com/search.json?q=blue%20angels&rpp=5&include_entities=true&with_twitter_user_id=true&result_type=mixed';
+	$headers['Content-type'] = 'application/x-www-form-urlencoded';
+
+   	$response = drupal_http_request($url, array('headers' => $headers, 'method' => 'GET'));
+   	if ($response->code == '200') {
+	    // http://drupal.org/node/985544 - json_decode large integer issue
+	    $length = strlen(PHP_INT_MAX);
+	    $data = preg_replace('/"(id|in_reply_to_status_id)":(\d{' . $length . ',})/', '"\1":"\2"', $response->data);
+	    $data = json_decode($response->data, TRUE);
+
+	    // Log twitter response.
+	    brdg_core_log_cron('', $data);
+	    return $data;
+   	}
+}
+
+/**
+ * Helper function to insert twitters tweets into drupal content_from_source.
+ */
+function save_twitter_into_node($twitter_entity) {
+	dpm($twitter_entity);
+	if (isset($twitter_entity['in_reply_to_status_id'])) {
+		return FALSE;
+	}
+	$node_type = 'content_from_source';
+	$id = $twitter_entity['id'];
+	$query = new EntityFieldQuery();
+	$result = $query->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', $node_type)
+		->fieldCondition('field_source_id', 'value', $id)
+		->execute();
+	if ($result) {
+		return NULL;
+	}
+	$twitter_user_profile_image = add_image_from_url($twitter_entity['profile_image_url']);
+	$node = (Object)null;
+	$node->type = $node_type;
+	node_object_prepare($node);
+	$node->title = 'from twitter';
+	$node->language = 'en';
+	$node->uid = 1;
+	$node->status = 1;
+	$node->comment = 2;
+	// Sometimes it has "Incorrect string value" error from mysql;
+	$node->body[LANGUAGE_NONE][0]['value'] = remove_non_utf8_string($twitter_entity['text']);
+	$node->body[LANGUAGE_NONE][0]['summary'] = remove_non_utf8_string($twitter_entity['text']);
+	$node->body[LANGUAGE_NONE][0]['format'] = 'full_html';
+	$node->field_source_id[LANGUAGE_NONE][0]['value'] = $twitter_entity['id_str'];
+	$node->field_from_user_id[LANGUAGE_NONE][0]['value'] = $twitter_entity['from_user_id'];
+	$node->field_from_user_name[LANGUAGE_NONE][0]['value'] = $twitter_entity['from_user'];
+	$node->field_from_user_profile_image[LANGUAGE_NONE][0] = (array)$twitter_user_profile_image;
+	$node->field_post_date[LANGUAGE_NONE][0] = array(
+		'value' => date('Y-m-d H:i:s', strtotime($twitter_entity['created_at'])),
+	);
+	$has_media = FALSE;
+	// Image
+	if (isset($twitter_entity['entities']['media'])) {
+		$media_array = $twitter_entity['entities']['media'];
+		foreach ($media_array as $media) {
+			$media_url = $media['media_url'];
+			$media_file = add_image_from_url($media_url);
+			if ($media_file) {
+				$has_media = TRUE;
+				$node->field_media_image[LANGUAGE_NONE][] = (array)$media_file;
+			}
+		}
+	}
+	// Video url
+	if (isset($twitter_entity['entities']['urls'])) {
+		$urls = $twitter_entity['entities']['urls'];
+		foreach ($urls as $url) {
+			if (brdg_twitter_check_video($url['expanded_url'])) {
+				$has_media = TRUE;
+				$node->field_video[LANGUAGE_NONE][] = array('value' => $url['expanded_url']);
+				$thumbnail_file_url = youtobe_thumbnail_from_video($url['expanded_url']);
+				$thumbnail_file = add_image_from_url($thumbnail_file_url, 'youtube_thumbnail');
+				if ($thumbnail_file) {
+					$node->field_video_thumbnail[LANGUAGE_NONE][] = (array)$thumbnail_file;
+				}
+			}
+			elseif (brdg_twitter_is_vimeo($url['expanded_url'])) {
+				$has_media = TRUE;
+				$node->field_video[LANGUAGE_NONE][] = array('value' => $url['expanded_url']);
+				$thumbnail_file_url =  brdg_twitter_get_vimeo_thumb($url['expanded_url']);
+				$thumbnail_file = add_image_from_url($thumbnail_file_url, 'vimeo_thumbnail');
+				if ($thumbnail_file) {
+					$node->field_video_thumbnail[LANGUAGE_NONE][] = (array)$thumbnail_file;
+				}
+			}
+			elseif (brdg_twitter_is_dallymotion($url['expanded_url'])) {
+				$long_url = expand_googl_short_url($url['expanded_url']);
+				if ($long_url) {
+					$has_media = TRUE;
+					$node->field_video[LANGUAGE_NONE][] = array('value' => $long_url);
+					$thumbnail_file_url = brdg_twitter_get_dallymotion_thumb($long_url);
+					$thumbnail_file = add_image_from_url($thumbnail_file_url, 'dallymotion_thumbnail');
+					if ($thumbnail_file) {
+						$node->field_video_thumbnail[LANGUAGE_NONE][] = 
+							(array)$thumbnail_file;
+					}
+				}
+			}
+                else if (brdg_twitter_is_vine($url['expanded_url'])) {
+				$has_media = TRUE;
+                $thumbnail_file_url = brdg_twitter_get_vine_thumb($url['expanded_url']);
+				$node->field_video[LANGUAGE_NONE][] = array('value' => $url['expanded_url']);
+				if ($thumbnail_file_url) {
+					$thumbnail_file = add_image_from_url($thumbnail_file_url, 'vine_thumbnail');
+				}
+				if ($thumbnail_file) {
+					$node->field_video_thumbnail[LANGUAGE_NONE][] = 
+						(array)$thumbnail_file;
+				}
+			}
+		}
+	}
+
+	// Soundclound URL
+	if (isset($twitter_entity['entities']['urls'])) {
+		$urls = $twitter_entity['entities']['urls'];
+		foreach ($urls as $url) {
+			if (brdg_twitter_check_soundcloud($url['expanded_url'])) {
+				$has_media = TRUE;
+				$node->field_sound[LANGUAGE_NONE][] = array('value' => $url['expanded_url']);
+				$sound_thumbnail = brdg_twitter_soundcloud_thumbnail_from_url($url['expanded_url']);
+				if ($sound_thumbnail) {
+					$node->field_sound_thumbnail[LANGUAGE_NONE][] = (array)$sound_thumbnail;
+				}
+			}
+		}
+	}
+
+	// set media source type
+	if ($source = brdg_twitter_source_type()) {
+		$node->field_source_type[LANGUAGE_NONE][0]['tid'] = $source->tid;
+	}
+            //print_r($twitter_entity['from_user']."<br/>");
+	// Set node location that associated with drupal user that associated with twitter account.
+	// node location --> drupal user --> twitter account
+	$drupal_account = 
+		brdg_core_load_drupal_user_with_screen_name($twitter_entity['from_user'], 'twitter');
+	if ($drupal_account) {
+
+		$node->field_user_city[LANGUAGE_NONE][0]['value'] = 
+			$drupal_account->field_user_city[LANGUAGE_NONE][0]['value'];
+        $node->field_post_owed_user[LANGUAGE_NONE][0]['target_id'] = $drupal_account->uid;
+                //print_r($drupal_account);
+                    if ($has_media) {
+                        brdg_core_node_save($node, 'brdg_twitter', $twitter_entity);
+                    }
+                    else {
+                            // nothing to do 
+                    }
+	}
+	else {
+		//TODO:: If not found drupal account then we ignore this twitter entity.
+		if (process_not_allowed_entity()) continue;
+	}
+	// If doesn't include any media, we don't need insert into our system.
+	
+}
+
+// Helper function to expand url of google short url.
+function expand_googl_short_url($url) {
+	$req_url = "https://www.googleapis.com/urlshortener/v1/url?shortUrl=$url";
+	$ret = drupal_http_request($req_url);
+	if ($ret->code == 200) {
+		$data = json_decode($ret->data, TRUE);
+		$url = $data['longUrl'];
+		return $url;
+	}
+}
+
+function brdg_twitter_is_vine($url) {
+	//vine.co/v/bxE6VdMFWmw
+	$allow_video_urls = array(
+		'/vine.co\/v\/([\w]+)/',
+	);
+	$is_vine = FALSE;
+	foreach ($allow_video_urls as $allow_video_url) {
+		$matches = array();
+		preg_match($allow_video_url, $url, $matches);
+		if (count($matches) > 1) {
+			$is_vine = TRUE;
+		}
+	}
+	return $is_vine;
+}
+
+function brdg_twitter_get_vine_thumb($url) {
+	//vine.co/v/bxEplBXVgYO
+	preg_match("/vine.co\/v\/([\w]+)/", $url, $matches);
+	$id = isset($matches['1']) ? $matches[1] : NULL;
+	$vine = file_get_contents("http://vine.co/v/{$id}");
+    //$vine = file_get_contents($url);
+	$matches = array();
+	preg_match('/property="og:image" content="(.*?)"/', $vine, $matches);
+	$thumbnail = ($matches[1]) ? $matches[1] : false;
+	if ($thumbnail) {
+		return $thumbnail;
+	}
+	return FALSE;
+}
+
+function brdg_twitter_is_dallymotion($url) {
+	$long_url = expand_googl_short_url($url);
+	if ($long_url) {
+		$url = $long_url;
+	}
+	$allow_video_urls = array(
+		'dailymotion.com/video',
+	);
+	$is_video = FALSE;
+	foreach ($allow_video_urls as $allow_video_url) {
+		if (strpos($url, $allow_video_url) !== FALSE) {
+			$is_video = TRUE;
+		}
+	}
+	return $is_video;
+}
+
+function brdg_twitter_get_dallymotion_thumb($url) {
+	//$url = "http://www.dailymotion.com/video/xp7suf_more-on-the-holy-ghost_music";
+	$id = strtok(basename($url), '_');
+	$req_url =  "https://api.dailymotion.com/video/$id?fields=thumbnail_large_url";
+	$ret = drupal_http_request($req_url);
+	if ($ret->code == 200) {
+		$data = json_decode($ret->data, TRUE);
+		return $data['thumbnail_large_url'];
+	}
+}
+
+// Check video link is vimeo video
+function brdg_twitter_is_vimeo($url) {
+	$allow_video_urls = array(
+		'/vimeo.com\/([\d]+)/',
+	);
+	$is_video = FALSE;
+	foreach ($allow_video_urls as $allow_video_url) {
+		$matches = array();
+		preg_match($allow_video_url, $url, $matches);
+		if (count($matches) > 1) {
+			$is_video = TRUE;
+		}
+	}
+	return $is_video;
+}
+
+// Get thumbnail of vimeo
+function brdg_twitter_get_vimeo_thumb($url){
+	preg_match("/http:\/\/vimeo\.com\/([\d]+)/i", $url, $matches);
+	$id = $matches[1];
+	if ($id) {
+		$url = "http://vimeo.com/api/v2/video/{$id}.json";
+		$ret = drupal_http_request($url);
+		if ($ret->code == '200') {
+			$data = json_decode($ret->data);
+			$vimeo = array_shift($data);
+			return $vimeo->thumbnail_large;
+		}
+	}
+}
+
+// Helper function to load source of twitter.
+function brdg_twitter_source_type() {
+	// Load settings
+	$twitter_settings = brdg_twitter_get_app_settings();
+	$source_name = $twitter_settings['source_type'];
+	return brdg_core_get_source_with_name($source_name);
+}
+
+// Helper function to check url is video.
+function brdg_twitter_check_video($url) {
+	$allow_video_urls = array(
+		'youtube.com/watch',
+		'youtu.be/watch',
+                            'youtu.be/'
+	);
+	$is_video = FALSE;
+	foreach ($allow_video_urls as $allow_video_url) {
+		if (strpos($url, $allow_video_url) !== FALSE) {
+			$is_video = TRUE;
+		}
+	}
+	return $is_video;
+}
+
+// Helper function to get thumbnail from soundcloud URL
+// Check: http://developers.soundcloud.com/docs/api/reference#resolve
+// for more details.
+function brdg_twitter_soundcloud_thumbnail_from_url($url) {
+//	global $user;
+//    print($url);
+//	$soundcloud = soundcloud_create_soundcloud($user->uid);
+//	if (!$soundcloud) {
+//		return NULL;
+//	}
+//	else {
+//		$soundcloud->setCurlOptions(array(CURLOPT_FOLLOWLOCATION => 1));
+//		try {
+//			$resolve_ret = $soundcloud->get('resolve', array('url' => $url));
+//            print_r($resolve_ret);
+//		}
+//		catch (Exception $e) {
+//			//empty
+//		}
+//		if (isset($resolve_ret)) {
+//			$soundcloud_object = json_decode($resolve_ret);
+//
+//            print($resolve_ret);
+//			return brdg_soundcloud_thumbnail($soundcloud_object);
+//		}
+//	}
+    $soundcloud = file_get_contents("http://api.soundcloud.com/resolve.json?url=".$url."&client_id=c3205e53c5fbac287866491969dba2bb");
+    $soundcloud_object = json_decode($soundcloud);
+    return brdg_soundcloud_thumbnail($soundcloud_object);
+}
+
+// Helper function to check url is soundcloud
+function brdg_twitter_check_soundcloud($url) {
+	$is_sound = FALSE;
+	if (strpos($url, "soundcloud.com") !== FALSE) {
+		$is_sound = TRUE;
+	}
+	return $is_sound;
+}
+
+/**
+ * Implements hook_services_view_alter()
+ * Youtube video thumbnail
+ */
+function brdg_twitter_services_view_alter(&$output, $views) {
+	$settings = brdg_twitter_get_app_settings();
+	if ($views->name == 'pictures' && ($views->current_display == 'services_3' || $views->current_display == 'services_2')) {
+		foreach ($output as &$output_item) {
+			if (isset($output_item->field_video) && count($output_item->field_video)) {
+				$html =$output_item->field_video_thumbnail;
+				preg_match( '@src="([^"]+)"@' , $html , $match);
+				$output_item->field_video_thumbnail = $match[1];
+			}
+		}
+	}
+}
+
+/**
+ * Get thumbnail URL from video url
+ */
+function youtobe_thumbnail_from_video($video_url, $size = 0) {
+	$settings = brdg_twitter_get_app_settings();
+	$params = drupal_parse_url($video_url);
+	$url = FALSE;
+	if (isset($params['query']) && isset($params['query']['v'])) {
+		$url = 'http://img.youtube.com/vi/'.$params['query']['v'].'/'.$settings['youtobei_thumbnail_size'].'.jpg';
+	}
+               else
+               {
+                   $shoturl =  explode("/",$video_url);
+                   $url = 'http://img.youtube.com/vi/'.$shoturl[3].'/'.$settings['youtobei_thumbnail_size'].'.jpg';
+               }
+
+	return $url;
+}
+
+// Filter to handler blackuser list.
+function brdg_twitter_brdg_core_filter(&$node, $from) {
+	return TRUE;
+	if ($from == 'brdg_twitter') {
+		$blackusers = brdg_user_block_list();
+		$twitter_uid = $node->field_from_user_id[LANGUAGE_NONE][0]['value'];
+		$twitter_account = twitter_account_load($twitter_uid);
+		if ($twitter_account) {
+			foreach ($blackusers as $blackuser) {
+				if ($blackuser->uid == $twitter_account->uid) {
+					return FALSE;
+				}
+			}
+			return TRUE;
+		}
+		else {
+			return FALSE;
+		}
+	}
+}
+
+/**
+ * Implements hook_form_alter()
+ */
+function brdg_twitter_form_alter(&$form, $form_state, $form_id) {
+	if ($form_id == 'user_profile_form') {
+		$form['#validate'][] = 'brdg_twitter_check_screen_name';
+	}
+}
+
+// When user submit screen name, we should make sure 
+// only one user can have screen name
+function brdg_twitter_check_screen_name($form, $form_state) {
+	$screen_name = $form_state['values']['field_twitter_screen_name'][LANGUAGE_NONE][0]['value'];
+	if(!empty($screen_name))
+    {
+        $drupal_account = brdg_core_load_drupal_user_with_screen_name($screen_name, 'twitter');
+        // Update account
+        if (isset($form_state['user']) && $form_state['user']->uid) {
+            $user = $form_state['user'];
+            if ($drupal_account && $user->uid != $drupal_account->uid) {
+                form_set_error('field_twitter_screen_name', t("Your screen_name is be registered already"));
+            }
+        }
+        // Insert new account
+        else {
+            if ($drupal_account) {
+                form_set_error('field_twitter_screen_name', t("Your screen_name is be registered already"));
+            }
+        }
+    }
+}
+
+/**
+ * Implements hook_user_update().
+ * Update third content profiles with drupal account
+ */
+//function brdg_twitter_user_update($edit, $account) {
+//	$screen_name = $edit['field_twitter_screen_name'][LANGUAGE_NONE][0]['value'];
+//	if ($screen_name) {
+//		$api = brdg_twitter_connect();
+//		$twitter_account = $api->users_show($screen_name);
+//		if ($twitter_account->id != NULL) {
+//			// Save the new Twitter account and set the user's uid who added it.
+//			// global $user;
+//			// $twitter_account->uid = $user->uid;
+//			$twitter_account->uid = $account->uid;
+//			twitter_account_save($twitter_account, TRUE);
+//		}
+//		else {
+//			drupal_set_message(t("Your twitter screen name maybe wrong."), 'warning');
+//		}
+//	}
+//}

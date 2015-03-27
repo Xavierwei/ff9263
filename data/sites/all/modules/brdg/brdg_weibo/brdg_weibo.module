@@ -1,0 +1,283 @@
+<?php
+
+/**
+ * @file
+ */
+
+// Load settings for weibo fetching.
+function brdg_weibo_get_app_settings() {
+	static $settings;
+	if ($settings) return $settings;
+	$settings = require_once(drupal_get_path('module', 'brdg_weibo').'/brdg_weibo.settings.php'
+		);
+	return $settings;
+}												
+
+/**
+ * Implements hook_menu().
+ */
+function brdg_weibo_menu() {
+	$items['weibo'] = array(
+		'page callback' => 'brdg_weibo_test_page_callback',
+		'access callback' => TRUE,
+	);
+
+	return $items;
+}
+
+// Get weibo API client object
+// Helper function 
+function brdg_weibo_connect() {
+	$settings = brdg_weibo_get_app_settings();
+	$user = brdg_weibo_load_account_with_weibo_uid($settings['weibo_uid']);
+	if ($user) {
+		$weibo_account = brdg_weibo_load_account($user->uid);
+		return brdg_weibo_client($weibo_account['oauth_token']);
+	}
+}
+
+// Menu callback.
+function brdg_weibo_test_page_callback() {
+    set_time_limit(10000 * 600); // 60 seconds
+	$settings = brdg_weibo_get_app_settings();
+	$api = brdg_weibo_connect();
+	$params = array();
+	$params['q'] = urlencode($settings['search_tag'][0]);
+	$params['count'] = $settings['max_num'];
+	$params['page'] = 0;
+	$search_ret = $api->oauth->get('search/topics', $params);
+	$statuses = $search_ret['statuses'];
+	// Before insert into node, we should check the URL of text.
+	foreach ($statuses as &$status) {
+		$text = $status['text'];
+		$url = array();
+		preg_match_all("/(http:\/\/[\w]+\.[\w\/]+)/", $text, $url);
+		$short_url = @$url[1][0];
+		if ($short_url) {
+			$ret_data = $api->oauth->get('short_url/expand', array('url_short' => $short_url));
+			$long_url = array_shift($ret_data['urls']);
+			if ($long_url['type'] == 1 && brdg_core_is_youku_link($long_url['url_long'])) {
+				$status['youku_video'] = $long_url;
+			}
+		}
+	}
+	
+	// Insert it into node
+	foreach ($statuses as $status) {
+		if (!isset($status['original_pic']) && !isset($status['youku_video'])) {
+			continue;
+		}
+		$node_type = 'content_from_source';
+		$id = $status['idstr'];
+		$query = new EntityFieldQuery();
+		$result = $query->entityCondition('entity_type', 'node')
+			->entityCondition('bundle', $node_type)
+			->fieldCondition('field_source_id', 'value', $id)
+			->execute();
+		if ($result) {
+			continue;
+		}
+		$user_profile_image = add_image_from_url($status['user']['profile_image_url']);
+		//if (!$user_profile_image) continue;
+		$node = (Object)null;
+		$node->type = $node_type;
+		node_object_prepare($node);
+		$node->title = 'from weibo';
+		$node->language = 'en';
+		$node->uid = 1;
+		$node->status = 1;
+		$node->comment = 2;
+		// Sometimes it has "Incorrect string value" error from mysql;
+		$node->body[LANGUAGE_NONE][0]['value'] = remove_non_utf8_string($status['text']);
+		$node->body[LANGUAGE_NONE][0]['summary'] = remove_non_utf8_string($status['text']);
+		$node->body[LANGUAGE_NONE][0]['format'] = 'full_html';
+		$node->field_source_id[LANGUAGE_NONE][0]['value'] = $status['idstr'];
+		$node->field_from_user_id[LANGUAGE_NONE][0]['value'] = $status['user']['idstr'];
+		$node->field_from_user_name[LANGUAGE_NONE][0]['value'] = $status['user']['screen_name'];
+		$node->field_from_user_profile_image[LANGUAGE_NONE][0] = (array)$user_profile_image;
+		$node->field_post_date[LANGUAGE_NONE][0] = array(
+			'value' => date('Y-m-d H:i:s', strtotime($status['created_at'])),
+		);
+		// set media source type
+		if ($source = brdg_weibo_source_type()) {
+			$node->field_source_type[LANGUAGE_NONE][0]['tid'] = $source->tid;
+		}
+		if ($media_image = add_image_from_url($status['original_pic'])) {
+			// set image madia 
+			$node->field_media_image[LANGUAGE_NONE][0] = (array)$media_image;
+		}
+
+		// Set youku video
+		if (isset($status['youku_video'])) {
+			$node->field_video[LANGUAGE_NONE][]['value'] = $status['youku_video']['url_long'];
+			$url = $status['youku_video']['url_long'];
+			$thumb = get_youku_thumb($url);
+			$thumb_file = add_image_from_url($thumb);
+			$node->field_video_thumbnail[LANGUAGE_NONE][] = (array)$thumb_file;
+		}
+
+		// set location of node
+		$screen_name = $status['user']['screen_name'];
+		$account = brdg_core_load_drupal_user_with_screen_name($screen_name, 'weibo');
+		if ($account) {
+			$node->field_user_city[LANGUAGE_NONE][0]['value'] = 
+				$account->field_user_city[LANGUAGE_NONE][0]['value'];
+            $node->field_post_owed_user[LANGUAGE_NONE][0]['target_id'] = $account->uid;
+            brdg_core_node_save($node, 'brdg_weibo');
+		}
+		else {
+			//TODO:: when user not in our system, we should process this issue.
+		}
+		// If doesn't include any media, we don't need insert into our system.
+	}
+	return date('Y-m-d');
+}
+
+// Helper function to load weibo account from uid.
+function brdg_weibo_load_account($uid = 0) {
+	if (!$uid) {
+		global $user;
+		$uid = $user->uid;
+	}
+	$weibo_account = db_select('weibo_account')
+		->fields('weibo_account')
+		->condition('uid', $uid)
+		->execute()
+		->fetchAssoc();
+	return $weibo_account;
+}
+
+function brdg_weibo_load_account_with_weibo_uid($weibo_uid) {
+	$weibo_account = db_select('weibo_account')
+		->fields('weibo_account')
+		->condition('weibo_uid', $weibo_uid)
+		->execute()
+		->fetchAssoc();
+	if ($weibo_account) {
+		return user_load($weibo_account['uid']);
+	}
+}
+
+// Helper function to load weibo API client.
+function brdg_weibo_client($access_token) {
+  	module_load_include('php', 'sinaweibo', 'saetv2.ex.class');
+	$key = variable_get('weibo_consumer_key', '');
+	$secret = variable_get('weibo_consumer_secret', '');
+	return new SaeTClientV2($key , $secret , $access_token);
+}
+
+function brdg_weibo_source_type() {
+	// Load settings
+	$settings = brdg_weibo_get_app_settings();
+	$source_name = $settings['source_type'];
+	return brdg_core_get_source_with_name($source_name);
+}
+
+/**
+ * Implements hook_brdg_core_filter()
+ */
+function brdg_weibo_brdg_core_filter(&$node, $from) {
+	return TRUE;
+	if ($from == 'brdg_weibo') {
+		$blackusers = brdg_user_block_list();
+		$weibo_uid = $node->field_from_user_id[LANGUAGE_NONE][0]['value'];
+		$weibo_account = brdg_weibo_load_account_with_weibo_uid($weibo_uid);
+		return TRUE;
+		if ($weibo_account) {
+			foreach ($blackusers as $blackuser) {
+				if ($blackuser->uid == $weibo_account->uid) {
+					return FALSE;
+				}
+			}
+			return TRUE;
+		}
+		else {
+			return FALSE;
+		}
+	}
+}
+
+/**
+ * Implements hook_node_presave()
+ */
+function brdg_weibo_node_presave($node) {
+	return '';
+	if ($node->type == 'content_from_source') {
+		$weibo_uid = $node->field_from_user_id[LANGUAGE_NONE][0]['value'];
+		if ($weibo_uid && $weibo_account = brdg_weibo_load_account_with_weibo_uid($weibo_uid)) {
+			$user = user_load($weibo_account->uid);
+			$node->field_post_owed_user[LANGUAGE_NONE][0]['value'] = $user->uid;
+		}
+	}
+}
+
+function brdg_weibo_get_youku_thumbnail_from_url() {
+
+}
+
+/**
+ * Implements hook_form_alter()
+ */
+function brdg_weibo_form_alter(&$form, $form_state, $form_id) {
+	if ($form_id == 'user_profile_form' || $form_id == 'user_register_form') {
+		$form['#validate'][] = 'brdg_weibo_check_screen_name';
+	}
+}
+
+// Validate screen name unique for weibo.
+function brdg_weibo_check_screen_name($form, $form_state) {
+	$screen_name = $form_state['values']['field_weibo_screen_name'][LANGUAGE_NONE][0]['value'];
+    if(!empty($screen_name))
+    {
+        $drupal_account = brdg_core_load_drupal_user_with_screen_name($screen_name, 'weibo');
+        // Update account
+        if (isset($form_state['user']) && $form_state['user']->uid) {
+            $user = $form_state['user'];
+            if ($drupal_account && $user->uid != $drupal_account->uid) {
+                form_set_error('field_weibo_screen_name', t("Your weibo screen_name is be registered already"));
+            }
+        }
+        // Insert new account
+        else {
+            if ($drupal_account) {
+                form_set_error('field_weibo_screen_name', t("Your weibo screen_name is be registered already"));
+            }
+        }
+    }
+}
+
+/**
+ * Add weibo profiles data when user update profile
+ */
+//function brdg_weibo_user_update($edit, $account) {
+//	$screen_name = isset($edit['field_weibo_screen_name'][LANGUAGE_NONE][0]['value']) ?
+//	$edit['field_weibo_screen_name'][LANGUAGE_NONE][0]['value'] : 0;
+//	if ($screen_name) {
+//		$api = brdg_weibo_connect();
+//		$ret = $api->show_user_by_name($screen_name);
+//		if (!brdg_weibo_load_account_with_weibo_uid($ret['idstr']) && empty($ret['error'])) {
+//			db_insert('weibo_account')
+//				->fields(array(
+//					'weibo_uid' => $ret['idstr'],
+//					'uid' => $account->uid,
+//					'screen_name' => $screen_name,
+//					'oauth_token' => '',
+//					'name' => $ret['name'],
+//				))
+//				->execute();
+//		}
+//	}
+//}
+
+// Get youku thumbnail image URL
+function get_youku_thumb($url) {
+	preg_match_all("/id\_(\w+)[\=|.html]/", $url, $matches);
+	if(!empty($matches[1][0])) {
+		$id = $matches[1][0];
+		$u = 'http://v.youku.com/player/getPlayList/VideoIDS/'.$id.'/version/5/source/out';
+		$json_str = file_get_contents($u);
+		$json = json_decode($json_str);
+		$image_url = $json->data[0]->logo;
+		return $image_url;
+	}
+}

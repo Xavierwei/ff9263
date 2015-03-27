@@ -1,0 +1,7 @@
+name = BRDG SoundCloud
+description = Fetch content with tag from soundcloud.
+package = brdg
+core = 7.x
+dependencies[] = soundcloud
+dependencies[] = brdg_core
+

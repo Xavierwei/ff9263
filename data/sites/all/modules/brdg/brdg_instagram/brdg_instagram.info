@@ -1,0 +1,7 @@
+name = BRDG Instagram
+description = Fetch content with tag from instagram.
+package = brdg
+core = 7.x
+dependencies[] = drupagram
+dependencies[] = brdg_core
+

@@ -1,0 +1,12 @@
+name = Brdg User Profiles
+core = 7.x
+package = brdg
+php = 5.2.4
+version = 7.x-1.0-dev1
+project = brdg_user_profiles
+dependencies[] = features
+dependencies[] = list
+dependencies[] = options
+features[features_api][] = api:1
+features[field][] = user-user-field_email_validated
+features[field][] = user-user-field_user_city

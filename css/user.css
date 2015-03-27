@@ -1,0 +1,43 @@
+.page-user #content {border-top-left-radius:0;background:#fff;}
+.page-user #header {text-align:center;padding:30px 0;margin:0;background:#111;border:none;}
+.page-user #sidebar {display:none;}
+.page-user #breadcrumb {display:none;}
+.page-user #content-header {display:none;}
+
+.page-user #content {width:600px;margin:0 auto;}
+.page-user #tabs{background:#000;height:44px;margin:0 0 40px 0;}
+.page-user #tabs ul {float:left;margin:0 0 0 20px;}
+.page-user #tabs ul li:last-child {display:none;}
+.page-user #tabs ul a {padding:8px 20px 0 20px;font-size:14px;}
+.page-user #tabs ul a:hover {background:#fff;color:#000;}
+.page-user .element-invisible {display:none;}
+
+.page-user #block-system-navigation {display:none;}
+.page-user .description  {display:none;}
+.page-user .item-list {display:none;}
+.page-user form {padding:0 80px;}
+.page-user form label {font-size:14px;color:#333;margin:0 0 5px 0; text-transform:uppercase;}
+.page-user form .form-text {width:340px;padding:10px;font-size:16px;color:#333;}
+.page-user form .form-item {margin:0;padding:0; position:relative;}
+.page-user form .form-item label.error { position:absolute;top:0;left:50px;font-size:11px; text-transform:none;width:311px;text-align:right;}
+.page-user form .form-item input.error {border:1px solid #e2a2a2;}
+.page-user form .form-required {color:#F60;}
+.page-user form .form-actions {background:none;border:none;margin:10px 0;padding:0;}
+.page-user form .form-submit {background:#333;color:#fff;border:none;padding:15px 30px;font-size:16px; text-transform:uppercase;margin:0 0 0 40px;}
+.page-user form .form-submit:hover {background:#666;color:#eee;}
+.page-user form .form-submit,.page-user #tabs ul a {-webkit-transition:all 0.2s ease-out;-moz-transition:all 0.2s ease-out;transition:all 0.2s ease-out;}
+.page-user .password-strength {display:none;}
+.page-user form .edit-actions {margin:0;padding:0;}
+#user-profile-form {padding-top:40px;}
+.collapse-processed {}
+#user-register-form #edit-picture {display:none;}
+#user-register-form .description {display:none;height:0;overflow:hidden;padding:0;margin:0;border:none;}
+#user-register-form select {width:360px;padding:8px 5px;height:38px;}
+.password-confirm {display:none;}
+
+#user-login #edit-submit {margin:0 auto;}
+
+.logged-in #tabs {display:none;}
+.logged-in #edit-submit {margin:0;}
+
+input:-webkit-autofill {background:#fff;}

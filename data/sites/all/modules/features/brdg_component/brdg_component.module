@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the Brdg Component feature.
+ */
+
+include_once 'brdg_component.features.inc';

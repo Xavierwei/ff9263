@@ -1,0 +1,236 @@
+<?php
+
+/**
+ * @file
+ */
+
+/**
+ * Implements hook_form_alter()
+ */
+function brdg_user_block_form_alter(&$form, &$form_state, $form_id) {
+	if ($form_id == 'user_admin_account') {
+		$account_options = &$form['accounts']['#options'];
+		foreach ($account_options as &$account_option) {
+			$data = $account_option['operations']['data'];
+			$href = explode('/', $data['#href']);
+			$uid = $href[1];
+			$blacklist = array(
+				'#type' => 'link',
+				'#title' => t('Add into blacklist'),
+				'#href' => 'admin/people/'.$uid.'/black',
+				'#options' => array('query' => array('destination' => 'admin/people'))
+			);
+			$account_option['operations'] = array('data' => array($data, $blacklist));
+		}
+	}
+	if ($form_id == 'user_register_form' || $form_id == "user_profile_form") {
+		$form['#validate'][] = 'brgd_user_block_validate_email';
+	}
+	if ($form_id == 'brdg_user_allowed_email_page') {
+		$form['#submit'][] = 'auto_add_black_word_for_comment';
+	}
+
+	if ($form_id == 'user_register_form') {
+		//TODO:
+	}
+}
+
+// Implements hook_user_login()
+function brdg_user_block_user_login(&$edit, $account) {
+	 //$_GET['destination'] =  "user/{$account->uid}/edit";
+}
+
+function auto_add_black_word_for_comment($form, $form_state) {
+	$word = $form_state['values']['disallowed_word'];
+	$query = db_query(
+		"SELECT * FROM {field_validation_rule} WHERE name = :name AND field_name = :field_name", 
+		array(":name" => "word_blacklist", ":field_name" => "comment_body"));
+	foreach ($query as $item) {
+		$settings = unserialize($item->settings);			
+		$disallowed_word = explode("\r\n", $word);
+		$words = implode(',', $disallowed_word);
+		$settings['data'] = $words;
+		$item->settings = $settings;
+		drupal_write_record("field_validation_rule", $item, 'ruleid');
+	}
+}
+
+// Validate user email
+function brgd_user_block_validate_email($form, $form_state) {
+	$mail = $form_state['values']['mail'];
+	$allowed_email = variable_get('allowed_email', "");
+	$allowed_emailes = explode("\r\n", $allowed_email);
+	foreach ($allowed_emailes as $allowed_email) {
+		if (strpos($mail, $allowed_email) !== FALSE) {
+			return;
+		}
+	}
+	form_set_error("mail", "Your email is not allowed by system.");
+}
+
+function helper_brgd_user_block_validate_email($mail) {
+	$allowed_email = variable_get('allowed_email', "");
+	$allowed_emailes = explode("\r\n", $allowed_email);
+	foreach ($allowed_emailes as $allowed_email) {
+		if (strpos($mail, $allowed_email) !== FALSE) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/**
+ * Implements hook_menu()
+ */
+function brdg_user_block_menu() {
+	$items['admin/people/%user/black'] = array(
+		'page callback' => 'brdg_user_block_append_user',
+		'page arguments' => array(2),
+		'access arguments' => array('add black user'),
+	);
+	$items['admin/config/system/user_allowed_email'] = array(
+		'page callback' => 'drupal_get_form',
+		'page arguments' => array('brdg_user_allowed_email_page'),
+		'access arguments' => array('admin_allowed_email'),
+		'title' => 'Swearing filter And Allowed Email',
+	);
+	$items['user/%user/block'] = array(
+		'page callback' => 'brdg_user_status_operation',
+		'page arguments' => array(1, 'block'),
+		'access arguments' => array('admin block account'),
+	);
+	$items['user/%user/unblock'] = array(
+		'page callback' => 'brdg_user_status_operation',
+		'page arguments' => array(1, 'unblock'),
+		'access arguments' => array('admin block account'),
+	);
+	$items['user/%user/validate-email'] = array(
+		'page callback' => 'brdg_user_validate_self_email',
+		'page arguments' => array(1),
+		'access callback' => TRUE,
+	);
+	return $items;
+}
+
+// User register validate email
+function brdg_user_validate_self_email($account) {
+	if ($account && isset($account->uid)) {
+		$account->field_email_validated[LANGUAGE_NONE][0]['value'] = 1;
+	}
+	user_save($account);
+
+	drupal_goto("/validated-email");
+}
+
+// Block user account
+function brdg_user_status_operation($user, $op = 'block') {
+	if ($op == 'block') {
+		$user->status = 0;
+	}
+	else if ($op == 'unblock') {
+		$user->status = 1;
+	}
+
+	user_save($user);
+
+	$back_url = $_SERVER['HTTP_REFERER'];
+	drupal_goto($back_url);
+}
+
+// Allowed email
+function brdg_user_allowed_email_page() {
+	$form['allowed_email'] = array(
+		'#type' => 'textarea',
+		'#title' => t('Allowed Email'),
+		'#description' => t(" .."),
+		'#default_value' => variable_get('allowed_email', ""),
+	);
+
+	$form['disallowed_word'] = array(
+		"#type" => 'textarea',
+		'#title' => t("Disallowed Words"),
+		'#description' => '.',
+		'#default_value' => variable_get('disallowed_word', ""),
+	);
+
+	return system_settings_form($form);
+}
+
+/**
+ * Implements hook_services_view_alter()
+ */
+function brdg_user_block_services_view_alter(&$output, $views) {
+	$disallowed_word = variable_get('disallowed_word', "");
+	$disallowed_word = explode("\r\n", $disallowed_word);
+	foreach ($output as &$output_item) {
+		$body = $output_item->field_body;
+		$filted_body = str_replace($disallowed_word, "***", $body);
+		$output_item->field_body = $filted_body;
+	}
+}
+
+// append user into blackuser list
+function brdg_user_block_append_user($user) {
+	$black_user = variable_get('brdg_black_user', array());
+	if (!in_array($user->uid, $black_user)) {
+		$black_user[] = $user->uid;
+		variable_set('brdg_black_user', $black_user);
+	}
+	drupal_goto(drupal_get_destination());
+}
+
+/**
+ * Implements hook_permission()
+ */
+function brdg_user_block_permission() {
+	return array(
+			'admin_allowed_email' => array(
+				'title' => t('Allowed Email'),
+			'admin_allowed_email' => array(
+				'title' => t('Allowed Email'),
+			),
+			'admin block account' => array(
+				'title' => t("Block account"),
+			),
+		),
+	);
+}
+
+// Helper function to load black user.
+function brdg_user_block_list() {
+	$black_user = variable_get('brdg_black_user', array());
+	return user_load_multiple($black_user);
+}
+
+/**
+* Implements hook_action_info().
+*/
+function brdg_user_block_action_info() {
+	return array(
+		'mymodule_unblock_user_action' => array(
+		'label' => t('Unblock the user'),
+		'type' => 'user',
+		'configurable' => FALSE,
+		'triggers' => array('any')),
+	);
+}
+
+/**
+* Unblocks a user, defaulting to the current user.
+*
+* @ingroup actions
+*/
+function brdg_user_block_unblock_user_action(&$entity, $context = array()) {
+	// First priority: If there is a $entity->uid, unblock that user.
+	// This is most likely a user object or the author if a node or comment.
+	if (isset($entity->uid)) {
+		$uid = $entity->uid;
+	}
+	// Otherwise get user ID from the context.
+	elseif (isset($context['uid'])) {
+		$uid = $context['uid'];
+	}
+	$account = user_load($uid);
+	$account = user_save($account, array('status' => 1));
+	watchdog('action', 'Unblocked user %name.', array('%name' => $account->name));
+}

@@ -1,0 +1,5 @@
+name = BRDG Services
+description = Provide services API for brdg.
+package = brdg
+dependencies[] = rest_server
+core = 7.x

@@ -1,0 +1,19 @@
+HTML EMBED INFO:
+You can embed this with some embed code similar to the one used by YouTube or you can use SWFObject (like I did)
+Through the HTML embed code you can send variables to Flash.
+
+SUPPORTED VARIABLES:
+* youtube_id = the youtube video ID
+* title = custom title for the embedded video
+* controls_always_on = true - if you don't want the controls to move outside
+* controls_fade_out_time = how many seconds to wait until the controls move out of the video screen
+* volume_cookie_on = true - if you want your sound volume value to be saved in a cookie and remember if for another session  
+
+
+INFO ABOUT THE FLASH FILE:
+You can open the FLA file with Flash CS3 (CS3+)
+The ActionScript 3.0 code is commented in some parts but it's not that easy to understand if you don't have that much experience.
+If you have any problems with the code or the design customization, just send me an email through my ActiveDen profile.
+
+
+Enjoy!

@@ -1,0 +1,20 @@
+a,.left_panel,.icon,#dc2 .btn_share,#dc2 .btn_comments,#dc1,#dc2,#dc3,#dc2 .btn_like
+{-webkit-transition:all 0.3s ease-in;-moz-transition:all 0.3s ease-in;transition:all 0.3s ease-in;}
+
+.dc3_wrap
+{-webkit-transition:all 0.3s linear;-moz-transition:all 0.3s linear;transition:all 0.3s linear;}
+
+.vgrid
+{-webkit-transition:margin 0.3s ease-in;-moz-transition:margin 0.3s ease-in;transition:margin 0.3s ease-in;}
+
+
+#dc2 .btn_close,#dc1 .back
+{-webkit-transition:background-color 0.3s ease-in,color 0.3s ease-in;-moz-transition:background-color 0.3s ease-in,color 0.3s ease-in;transition:background-color 0.3s ease-in,color 0.3s ease-in;}
+
+.icons_share a,#dc1
+{-webkit-transition:all 0.2s linear;-moz-transition:all 0.2s linear;transition:all 0.2s linear;}
+
+
+
+.dc1_face,.form_item .text_input,.form_item .button_input
+{-webkit-transition:all 0.4s linear;-moz-transition:all 0.4s linear;transition:all 0.4s linear;}

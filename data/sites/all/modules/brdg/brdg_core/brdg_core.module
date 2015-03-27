@@ -1,0 +1,405 @@
+<?php
+
+/**
+* @file
+*/
+
+/**
+* Implements hook_menu()
+*/
+function brdg_core_menu() {
+    $items['brdg-user'] = array(
+        'title' => 'User account',
+        'title callback' => 'user_menu_title',
+        'page callback' => 'brdg_user_page',
+        'access callback' => TRUE,
+    );
+    $items['brdgfront'] = array(
+      'title' => 'BRDG',
+      'page callback' => 'brdg_front_page',
+      'access callback' => TRUE,
+    );
+    return $items;
+}
+
+function brdg_front_page() {
+  return '';
+}
+
+/**
+* implements HOOKNAME_process_THEMENAME().
+*/
+function brdg_core_process_html(&$vars) {
+  //
+}
+
+function brdg_user_page() {
+  global $user;
+  if ($user->uid) {
+    menu_set_active_item('user/' . $user->uid);
+    return menu_execute_active_handler(NULL, FALSE);
+  }
+  else {
+    return drupal_get_form('user_login');
+  }
+}
+
+
+// Load source type.
+function brdg_core_get_source_with_name($name) {
+$vocabulary_name = 'data_source';
+    $vocabulary = taxonomy_vocabulary_machine_name_load($vocabulary_name);
+    $query = new EntityFieldQuery;
+    $query->entityCondition('entity_type', 'taxonomy_term')
+     ->propertyCondition('vid', $vocabulary->vid)
+     ->propertyCondition('name', $name, 'LIKE');
+    $result = $query->execute();
+
+    if ($result) {
+     $term = array_shift($result['taxonomy_term']);
+     return taxonomy_term_load($term->tid);
+    }
+    return NULL;
+}
+
+// Logger function
+function brdg_core_log_cron($source_type, $query_ret) {
+//TODO
+}
+
+function brdg_insert_node($temp_node) {
+
+}
+
+// Remove non utf8 code from string.
+function remove_non_utf8_string($string) {
+  $string = preg_replace('/'.
+   '[\x00-\x08\x10\x0B\x0C\x0E-\x19\x7F]'.
+   '|[\x00-\x7F][\x80-\xBF]+'.
+   '|([\xC0\xC1]|[\xF0-\xFF])[\x80-\xBF]*'.
+   '|[\xC2-\xDF]((?![\x80-\xBF])|[\x80-\xBF]{2,})'.
+   '|[\xE0-\xEF](([\x80-\xBF](?![\x80-\xBF]))|'.
+   '(?![\x80-\xBF]{2})|[\x80-\xBF]{3,})'.
+   '/S',
+   '?', $string);
+   
+  //reject overly long 3 byte sequences
+  //and UTF-16 surrogates and replace with ?
+  $string = preg_replace('/'.
+   '\xE0[\x80-\x9F][\x80-\xBF]'.
+   '|\xED[\xA0-\xBF][\x80-\xBF]'.
+   '/S',
+   '?', $string);
+
+  return $string;
+}
+
+// Save image from URL.
+function add_image_from_url($image_url, $location = 'third_content') {
+  $directory = file_build_uri($location);
+  if (!file_prepare_directory($directory, FILE_CREATE_DIRECTORY)) {
+    $directory = NULL;
+  }
+  if (function_exists('brdg_soundcloud_save_url_file')) {
+    $file = brdg_soundcloud_save_url_file($image_url, $directory, TRUE);
+  }
+  else {
+    $file = brdg_core_retrieve_file($image_url, $directory, TRUE, FILE_EXISTS_REPLACE);
+  }
+  return $file;
+}
+
+function brdg_core_retrieve_file($url, $destination = NULL, $managed = FALSE, $replace = FILE_EXISTS_RENAME) {
+    $parsed_url = parse_url($url);
+    $file_name = str_replace("/", "_", $parsed_url['path']);
+      if (!isset($destination)) {
+        $path = file_build_uri($file_name);
+      }
+      else {
+        if (is_dir(drupal_realpath($destination))) {
+          // Prevent URIs with triple slashes when glueing parts together.
+          $path = str_replace('///', '//', "$destination/") .$file_name;
+        }
+        else {
+          $path = $destination;
+        }
+      }
+      $result = drupal_http_request($url);
+      if ($result->code != 200) {
+        drupal_set_message(t('HTTP error @errorcode occurred when trying to fetch @remote.', array('@errorcode' => $result->code, '@remote' => $url)), 'error');
+        return FALSE;
+      }
+      $local = $managed ? file_save_data($result->data, $path, $replace) : file_unmanaged_save_data($result->data, $path, $replace);
+      if (!$local) {
+        drupal_set_message(t('@remote could not be saved to @path.', array('@remote' => $url, '@path' => $path)), 'error');
+      }
+
+      return $local;
+}
+
+// Check weather post is insert into our system
+function brdg_core_media_is_inserted($id) {
+  $query = new EntityFieldQuery();
+  $result = $query->entityCondition('entity_type', 'node')
+  ->entityCondition('bundle', 'content_from_source')
+  ->fieldCondition('field_source_id', 'value', $id)
+  ->execute();
+  return !!$result;
+}
+
+// Alter node that been inserted system.
+function brdg_core_node_save($node, $from, $entity = NULL) {
+    $source_id = $node->field_source_id[LANGUAGE_NONE][0]['value'];
+    if ($source_id && brdg_core_media_is_inserted($source_id)) {
+        return FALSE;
+    }
+    $modules = module_list();
+    $filters = array();
+    foreach ($modules as $module) {
+        $func = $module.'_brdg_core_filter';
+        if (function_exists($func) && $func($node, $from, $entity) === FALSE) {
+            //return;
+        }
+    }
+    node_save($node);
+}
+
+/**
+* Implements hook_services_view_alter()
+*/
+function brdg_core_services_view_alter(&$output, $views) {
+  foreach ($output as &$output_item) {
+    if (isset($output_item->field_user_profile_image) && !empty($output_item->field_user_profile_image)) {
+      $output_item->field_user_profile_image = file_create_url($output_item->field_user_profile_image['uri']);
+    }
+    if (isset($output_item->field_media_image) && !empty($output_item->field_media_image)) {
+      $html = array_shift($output_item->field_media_image);
+      preg_match( '@src="([^"]+)"@' , $html , $match);
+      $output_item->field_media_image = $match[1];
+    }
+    if (isset($output_item->field_sound_thumbnail) && !empty($output_item->field_sound_thumbnail)) {
+      $html = $output_item->field_sound_thumbnail;
+      preg_match( '@src="([^"]+)"@' , $html , $match);
+      $output_item->field_sound_thumbnail = $match[1];
+    }
+  if (isset($output_item->field_video_thumbnail) && !empty($output_item->field_video_thumbnail)) {
+      $html = $output_item->field_video_thumbnail;
+      preg_match( '@src="([^"]+)"@' , $html , $match);
+      $output_item->field_video_thumbnail = $match[1];
+  }
+    if (!isset($output_item->field_flag_counter)) {
+        $output_item->field_flag_counter = 0;
+    }
+    if (isset($output_item->field_anonymous_flaged)) {
+        $output_item->field_anonymous_flaged = intval($output_item->field_anonymous_flaged);
+    }
+  }
+}
+
+/**
+* Implements hook_init()
+*/
+function brdg_core_init() {
+    drupal_add_js(drupal_get_path('module', 'brdg_core').'/js.example.js');
+}
+
+function brdg_core_is_youku_link($url) {
+  if (strpos($url, 'youku.com') !== FALSE) {
+    return TRUE;
+  }
+  return FALSE;
+}
+
+/**
+* Implements hook_comment_insert()
+* The comment is unpublish as default
+*/
+function brdg_core_comment_insert($comment) {
+  $comment->status = 0;
+  comment_save($comment);
+}
+
+// Helper function to load drupal user from twitter screen name
+function brdg_core_load_drupal_user_with_screen_name($screen_name, $source_type) {
+  $allowed_third_type = array('twitter', 'weibo', 'instagram');
+  if (!in_array($source_type, $allowed_third_type)) {
+    return;
+  }
+///////////// would be deleted later
+  // // First check screen name in DB
+  // $query = db_select("twitter", 't')
+  // ->fields('t', array('twitter_id'))
+  // ->condition('t.screen_name', $screen_name);
+  // $twitter_id = $query->execute()->fetchCol();
+
+  // // If user not already in twitter table,
+  // // Then we fetch it from twitter site and add it into our system
+  // if (!$twitter_id) {
+  // $api = brdg_twitter_connect();
+  // try {
+  // $twitter_account = $api->users_show($screen_name);
+  // } catch (TwitterException $e) {
+  // form_set_error('screen_name', t('Request failed: @message.', array('@message' => $e->getMessage())));
+  // return;
+  // }
+  // // Save the new Twitter account and set the user's uid who added it.
+  // // global $user;
+  // // $twitter_account->uid = $user->uid;
+  // twitter_account_save($twitter_account, TRUE);
+  // }
+//////////////////////////////////////////////////////
+  $query = new EntityFieldQuery();
+  if ($source_type == 'twitter') {
+    $field = 'field_twitter_screen_name';
+  }
+  elseif ($source_type == 'instagram') {
+    $field = 'field_instagram_screen_name';
+  }
+  elseif ($source_type == 'weibo') {
+    $field = 'field_weibo_screen_name';
+  }
+  $ret = $query->entityCondition('entity_type', 'user')
+    ->fieldCondition($field, 'value', $screen_name)
+    ->execute();
+    print_r($ret);
+  if (!isset($ret['user'])) {
+    return;
+  }
+  $uid = array_pop($ret['user']);
+  $uid = $uid->uid;
+  $user = user_load($uid);
+  return $user;
+}
+
+/**
+* Act on a flagging.
+*
+* @param $op
+* The operation being performed: one of 'flag' or 'unflag'.
+* @param $flag
+* The flag object.
+* @param $content_id
+* The id of the content (aka entity) the flag is on.
+* @param $account
+* The user account performing the action.
+* @param $fcid
+* The id of the flagging in the {flag_content} table.
+*/
+function brdg_core_flag($op, $flag, $content_id, $account, $fcid) {
+  if ($op =='flag' && $account->uid == 0) {
+    $node = $flag->_load_content($content_id);
+    if ($flag->content_type == 'node') {
+      $node->field_anonymous_flaged[LANGUAGE_NONE][0]['value'] += 1;
+      node_save($node);
+    }
+  }
+  elseif ($op == 'unflag' && $account->uid == 0) {
+    $node = $flag->_load_content($content_id);
+    if ($flag->content_type == 'node') {
+      $node->field_anonymous_flaged[LANGUAGE_NONE][0]['value'] < 1 ?
+      "": $node->field_anonymous_flaged[LANGUAGE_NONE][0]['value'] -= 1;
+      node_save($node);
+    }
+  }
+}
+
+/**
+* Implements hook_views_pre_build()
+*/
+function brdg_core_views_pre_build(&$view) {
+    if (isset($_GET["perpage"])) {
+        $perpage = intval(check_plain($_GET["perpage"]));
+        if ($perpage > 1) {
+          $view->display_handler->options['pager']['options']["items_per_page"] = $perpage;
+        }
+        // else if ($perpage == "all") {
+        // $view->pager["use_pager"] = false;
+        // $view->pager["items_per_page"] = 0;
+        // }
+    }
+}
+
+/**
+* Implements hook_node_presave.
+*/
+function brdg_core_node_presave($node) {
+    // when node presave
+    // we set default media type for it.
+    if ($node->type == 'content_from_source' && empty($node->nid)) {
+        if (!empty($node->field_media_image)) {
+            $media_type = brdg_core_get_media_type("Image");
+        }
+        elseif (!empty($node->field_video)) {
+            $media_type = brdg_core_get_media_type("Video");
+        }
+        elseif (!empty($node->field_sound)) {
+            $media_type = brdg_core_get_media_type("Sound");
+        }
+
+        $node->field_media_type[LANGUAGE_NONE][0]['tid'] = $media_type->tid;
+    }
+}
+
+// helper function to get media type tid
+function brdg_core_get_media_type($media_type_name) {
+    $vocabulary_name = 'media_type';
+    $vocabulary = taxonomy_vocabulary_machine_name_load($vocabulary_name);
+    $query = new EntityFieldQuery;
+    $query->entityCondition('entity_type', 'taxonomy_term')
+        ->propertyCondition('vid', $vocabulary->vid)
+        ->propertyCondition('name', $media_type_name, 'LIKE');
+    $result = $query->execute();
+
+    if ($result) {
+        $term = array_shift($result['taxonomy_term']);
+        return taxonomy_term_load($term->tid);
+    }
+}
+
+/**
+* Implements hook_views_query_alter()
+*/
+function brdg_core_views_query_alter(&$view, &$query) {
+  if ($view->name == 'admin_pages') {
+    $sort_by = isset($_GET['sort_by']) ? $_GET['sort_by'] : "";
+    if ($sort_by == 'comment_flag') {
+      $order = $_GET['sort_order'];
+      $order_comment = $query->field_aliases['node_comment_statistics']['comment_count'];
+      $order_flag = $query->field_aliases['field_data_field_anonymous_flaged']['field_anonymous_flaged_value'];
+      $query->orderby[] = array(
+        'field' => "($order_comment + $order_flag)/2",
+        'direction' => $order
+      );
+      foreach ($query->orderby as &$order_field) {
+        $order_field['direction'] = $order;
+      }
+    }
+  }
+}
+
+/**
+* Implements hook_form_alter()
+*/
+function brdg_core_form_alter(&$form, $form_state, $form_id) {
+  if ($form_id == 'views_exposed_form') {
+    $view = $form_state['view'];
+    if ($view->name == 'admin_pages' && isset($form['sort_by'])) {
+      $form['sort_by']['#options'] += array('comment_flag' => t("Comment/Flag"));
+    }
+  }
+  if ($form_id == 'comment_admin_overview') {
+    $form['comments']['#header']['author'] = array(
+      'data' => t('Email'),
+      'field' => 'email',
+    );
+    foreach ($form['comments']['#options'] as $comment_id => &$options) {
+      $comment = comment_load($comment_id);
+      $options['author'] = $comment->field_email[LANGUAGE_NONE][0]['value'];
+    }
+  }
+}
+
+// Helper function to process entity that creator not in our system
+function process_not_allowed_entity($node) {
+  return FALSE;
+}

@@ -1,0 +1,149 @@
+<?php
+
+/**
+ * @file
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function brdg_soundcloud_menu() {
+	$items['test_soundcloud'] = array(
+		'page callback' => 'test_soundcloud_page_calback',
+		'access callback' => TRUE
+	);
+	return $items;
+}
+
+// Menu callback
+function test_soundcloud_page_calback() {
+	// $permalink_url = $soundcloud_obj->permalink_url;
+	// $embed_info = json_decode($soundcloud->get('oembed', array('url' => $permalink_url)));
+	// print $embed_info->html;
+	$settings = brdg_soundcloud_get_app_settings();
+	global $user;
+	$soundcloud = soundcloud_create_soundcloud($user->uid);
+	if (!$soundcloud) {
+		return 'failed';
+	}
+	$soundcloud->setCurlOptions(array(CURLOPT_FOLLOWLOCATION => 1));
+	try {
+		foreach ($settings['search_tag'] as $tag) {
+			$search_tag_ret = json_decode($soundcloud->get('tracks', array('q' => $tag, 'limit' => $settings['max_num'])), TRUE);
+			foreach($search_tag_ret as $tag_ret) {
+				// Get the soundcloud user profile from search object.
+				$soundcloud_user = json_decode($soundcloud->get('users/'.$tag_ret['user_id']), TRUE);
+				$tag_ret['soundcloud_user'] = $soundcloud_user;
+				// Insert it into our entity system.
+				brdg_soundcloud_insert_node($tag_ret);
+			}
+		}
+	} catch (Services_Soundcloud_Invalid_Http_Response_Code_Exception $e) {
+		exit($e->getMessage());
+	}
+
+	return 'hello';
+}
+
+function brdg_soundcloud_insert_node($soundcloud_object) {
+	$node_type = 'content_from_source';
+	$id = $soundcloud_object['id'];
+	$query = new EntityFieldQuery();
+	$result = $query->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', $node_type)
+		->fieldCondition('field_source_id', 'value', $id)
+		->execute();
+	if ($result) {
+		return NULL;
+	}
+	$soundcloud_user_profile_image = add_image_from_url($soundcloud_object['soundcloud_user']['avatar_url']);
+	$node = (Object)null;
+	$node->type = $node_type;
+	node_object_prepare($node);
+	$node->title = 'from soundcloud';
+	$node->language = 'en';
+	$node->uid = 1;
+	$node->status = 1;
+	$node->comment = 2;
+	// Sometimes it has "Incorrect string value" error from mysql;
+	$node->body[LANGUAGE_NONE][0]['value'] = remove_non_utf8_string($soundcloud_object['description']);
+	$node->body[LANGUAGE_NONE][0]['summary'] = remove_non_utf8_string($soundcloud_object['description']);
+	$node->body[LANGUAGE_NONE][0]['format'] = 'full_html';
+	$node->field_source_id[LANGUAGE_NONE][0]['value'] = $soundcloud_object['id'];
+	$node->field_from_user_id[LANGUAGE_NONE][0]['value'] = $soundcloud_object['user_id'];
+	$node->field_from_user_name[LANGUAGE_NONE][0]['value'] = $soundcloud_object['soundcloud_user']['full_name'];
+	$node->field_from_user_profile_image[LANGUAGE_NONE][0] = (array)$soundcloud_user_profile_image;
+	$node->field_post_date[LANGUAGE_NONE][0] = array(
+		'value' => date('Y-m-d H:i:s', strtotime($soundcloud_object['created_at'])),
+	);
+	// Soundcloud url
+	if (isset($soundcloud_object['permalink_url'])) {
+		$urls = array($soundcloud_object['permalink_url']);
+		foreach ($urls as $url) {
+			$artwork_url = $soundcloud_object['artwork_url'];
+			if ($artwork_url) {
+				$artwork_url = preg_replace("/large/", "t500x500", $artwork_url);
+			}
+			$sound_thumbnail = add_image_from_url($artwork_url);
+			if ($sound_thumbnail) {
+				$node->field_sound_thumbnail[LANGUAGE_NONE][] = (array)$sound_thumbnail;
+			}
+			$node->field_sound[LANGUAGE_NONE][] = array('value' => $url);
+		}
+	}
+	// set media source type
+	if ($source = brdg_soundcloud_source_type()) {
+		$node->field_source_type[LANGUAGE_NONE][0]['tid'] = $source->tid;
+	}
+
+	// Store the soundcloud object into node entity.
+	$node->field_extra[LANGUAGE_NONE][0]['value'] = json_encode($soundcloud_object);
+
+	brdg_core_node_save($node, 'brdg_soundcloud');
+}
+
+// Helper function to load thumbnail from soundcloud object
+function brdg_soundcloud_thumbnail($soundcloud_object) {
+	$settings = brdg_soundcloud_get_app_settings();
+	$artwork_url = $soundcloud_object->artwork_url;
+	if ($artwork_url) {
+		$artwork_url = preg_replace("/large/", $settings['thumbnail_size'], $artwork_url);
+	}
+	return add_image_from_url($artwork_url);
+}
+
+// Load this media type.
+function brdg_soundcloud_source_type() {
+	// Load settings
+	$soundcloud_settings = brdg_soundcloud_get_app_settings();
+	$source_name = $soundcloud_settings['source_type'];
+	return brdg_core_get_source_with_name($source_name);
+}
+
+// Load this module settings.
+function brdg_soundcloud_get_app_settings() {
+	static $settings;
+	if ($settings) return $settings;
+	$settings = require_once(drupal_get_path('module', 'brdg_soundcloud').'/brdg_soundcloud.settings.php'
+		);
+	return $settings;
+}
+
+/**
+ * Implements hook_services_view_alter()
+ * Youtube video thumbnail
+ */
+function brdg_soundcloud_services_view_alter(&$output, $views) {
+	$settings = brdg_soundcloud_get_app_settings();
+	if ($views->name == 'pictures' && ($views->current_display == 'services_3' || $views->current_display == 'services_4')) {
+		foreach ($output as &$output_item) {
+			if (isset($output_item->field_sould) && count($output_item->field_sould)) {
+				$html =$output_item->field_sound_thumbnail;
+				if (is_string($html)) {
+					preg_match( '@src="([^"]+)"@' , $html , $match);
+					$output_item->field_sound_thumbnail = $match[1];
+				}
+			}
+		}
+	}
+}

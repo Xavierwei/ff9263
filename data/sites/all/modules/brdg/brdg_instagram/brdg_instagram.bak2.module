@@ -1,0 +1,228 @@
+<?php
+/*
+ * @file
+ */
+
+
+/**
+ * Implements hook_menu().
+ */
+function brdg_instagram_menu()
+{
+    $items['instagram'] = array(
+        'page callback' => 'instagram_test_fetch',
+        'access callback' => TRUE
+    );
+
+    return $items;
+}
+
+/**
+ * Get entity from instagram searched
+ */
+function brdg_instagram_entity($sort = 'field_source_id', $order = "ASC")
+{
+    $source = brdg_instagbram_source_type();
+    $query  = new EntityFieldQuery;
+    $ret    = $query->entityCondition('entity_type', 'node')->entityCondition('bundle', 'content_from_source')->propertyCondition('status', 1)->fieldCondition('field_source_type', 'tid', $source->tid)->fieldOrderBy($sort, 'value', $order)->execute();
+    return array_keys($ret['node']);
+}
+
+// Menu callback
+function instagram_test_fetch()
+{
+    set_time_limit(1000 * 600); // 60 seconds
+    $settings = brdg_instagram_get_app_settings();
+    foreach ($settings['search_tag'] as $search_tag) {
+        instagram_fetch($search_tag);
+    }
+
+    return 'done';
+}
+
+// Fetch one tag
+function instagram_fetch($search_tag)
+{
+    $nids     = brdg_instagram_entity();
+    $min_nid  = array_shift($nids);
+    $min_node = node_load($min_nid);
+    if ($min_node) {
+        $min_tag_id = $min_node->field_source_id[LANGUAGE_NONE][0]['value'];
+    } else {
+        $min_tag_id = 0;
+    }
+    $node_type = 'content_from_source';
+    module_load_include('inc', 'drupagram');
+    $settings      = brdg_instagram_get_app_settings();
+    $instagram_uid = $settings['instagram_uid'];
+    // Load object of API
+    $drupagram     = drupagram_connect(drupagram_account_load($instagram_uid));
+
+    $results       = $drupagram->fetch('tags_recent', array(
+        '!tag_name' => $search_tag,
+        '!count' => $settings['max_num']
+    ));
+
+    foreach ($results as $result) {
+        // Save user profile image media.
+        $media_image        = add_image_from_url($result->images['standard_resolution']['url'], 'instagram');
+        // Save shared image media.
+        $user_profile_image = add_image_from_url($result->user->profile_picture, 'instagram');
+        if (!$media_image || !$user_profile_image) {
+            continue;
+        }
+        $node       = (Object) null;
+        $node->type = $node_type;
+        node_object_prepare($node);
+        $node->title                                           = 'from instagram';
+        $node->language                                        = 'en';
+        $node->uid                                             = 1;
+        // set the default status as "off"
+        $node->status                                          = 0;
+        $node->comment                                         = 2;
+        // Sometimes it has "Incorrect string value" error from mysql;
+        // Sometimes it has "Incorrect string value" error from mysql;
+        $node->body[LANGUAGE_NONE][0]['value']                 = remove_non_utf8_string($result->caption['text']);
+        $node->body[LANGUAGE_NONE][0]['summary']               = remove_non_utf8_string($result->caption['text']);
+        $node->body[LANGUAGE_NONE][0]['format']                = 'full_html';
+        $node->field_source_id[LANGUAGE_NONE][0]['value']      = $result->id;
+        $node->field_from_user_id[LANGUAGE_NONE][0]['value']   = $result->user->id;
+        $node->field_from_user_name[LANGUAGE_NONE][0]['value'] = $result->user->username;
+        $node->field_from_user_profile_image[LANGUAGE_NONE][0] = (array) $user_profile_image;
+        $node->field_post_date[LANGUAGE_NONE][0]               = array(
+            'value' => date('Y-m-d H:i:s', $result->created_time)
+        );
+        $node->field_media_image[LANGUAGE_NONE][]              = (array) $media_image;
+
+        if($result->videos)
+        {
+            //print_r($result->videos['standard_resolution']);
+            $node->field_video[LANGUAGE_NONE][] = array('value' =>  $result->videos['standard_resolution']['url']);
+            $node->field_video_thumbnail[LANGUAGE_NONE][] = (array)$media_image;
+            $node->field_media_type[LANGUAGE_NONE][0]['tid'] = 7;
+        }
+        // set media source type
+        if ($source = brdg_instagbram_source_type()) {
+            $node->field_source_type[LANGUAGE_NONE][0]['tid'] = $source->tid;
+        }
+
+
+        // set location of node
+        $screen_name = $result->user->username;
+        $account     = brdg_core_load_drupal_user_with_screen_name($screen_name, 'instagram');
+        if ($account) {
+            $node->field_user_city[LANGUAGE_NONE][0]['value'] = $account->field_user_city[LANGUAGE_NONE][0]['value'];
+            $node->field_post_owed_user[LANGUAGE_NONE][0]['target_id'] = $account->uid;
+            brdg_core_node_save($node, 'brdg_instagram');
+        } else {
+            // allow every one post content
+            brdg_core_node_save($node, 'brdg_instagram');
+//            //TODO:: when user not in our system, we should process this issue.
+//            if (process_not_allowed_entity($node))
+//                continue;
+        }
+
+    }
+    return 'hello world';
+}
+
+// Load instagram settings.
+function brdg_instagram_get_app_settings()
+{
+    static $settings;
+    if ($settings)
+        return $settings;
+    $settings = require_once(drupal_get_path('module', 'brdg_instagram') . '/brdg_instagram.settings.php');
+    return $settings;
+}
+
+function brdg_instagbram_source_type()
+{
+    // Load settings
+    $instagram_settings = brdg_instagram_get_app_settings();
+    $source_name        = $instagram_settings['source_type'];
+    return brdg_core_get_source_with_name($source_name);
+}
+
+// Filter to handler blackuser list.
+function brdg_instagram_brdg_core_filter(&$node, $from)
+{
+    return TRUE;
+    if ($from == 'brdg_instagram') {
+        $blackusers        = brdg_user_block_list();
+        $instagram_uid     = $node->field_from_user_id[LANGUAGE_NONE][0]['value'];
+        $instagram_account = drupagram_account_load($instagram_uid);
+        if ($instagram_account) {
+            foreach ($blackusers as $blackuser) {
+                foreach ($blackuser->drupagram_accounts as $drupagram_account) {
+                    if ($drupagram_account->id == $instagram_uid) {
+                        return FALSE;
+                    }
+                }
+            }
+            return TRUE;
+        } else {
+            return FALSE;
+        }
+    }
+}
+
+/**
+ * Implements hook_form_alter()
+ */
+function brdg_instagram_form_alter(&$form, $form_state, $form_id)
+{
+    if ($form_id == 'user_profile_form') {
+        $form['#validate'][] = 'brdg_instagram_check_screen_name';
+    }
+}
+
+// Validate screen name unique for weibo.
+function brdg_instagram_check_screen_name($form, $form_state)
+{
+    $screen_name    = $form_state['values']['field_instagram_screen_name'][LANGUAGE_NONE][0]['value'];
+    if(!empty($screen_name))
+    {
+        $drupal_account = brdg_core_load_drupal_user_with_screen_name($screen_name, 'instagram');
+        // Update account
+        if (isset($form_state['user']) && $form_state['user']->uid) {
+            $user = $form_state['user'];
+            if ($drupal_account && $user->uid != $drupal_account->uid) {
+                form_set_error('field_instagram_screen_name', t("Your screen_name is be registered already"));
+            }
+        }
+        // Insert new account
+        else {
+            if ($drupal_account) {
+                form_set_error('field_instagram_screen_name', t("Your screen_name is be registered already"));
+            }
+        }
+    }
+}
+
+/**
+ * Implements hook_user_update()
+ */
+function brdg_instagram_user_update($edit, $account)
+{
+    $screen_name = $edit['field_instagram_screen_name'][LANGUAGE_NONE][0]['value'];
+    if ($screen_name) {
+        $api            = brdg_instagram_connect();
+        $ret            = $api->user_lookup($screen_name);
+        $instagram_user = array_shift($ret);
+        $id             = $instagram_user->id;
+        $ret            = $api->user_info($id);
+        $instagram_user = array_shift($ret);
+        drupagram_account_save($instagram_user, TRUE, $account);
+    }
+}
+
+// Helper function
+// Get instagram services API instance.
+function brdg_instagram_connect()
+{
+    $settings      = brdg_instagram_get_app_settings();
+    $instagram_uid = $settings['instagram_uid'];
+    // Load object of API
+    return drupagram_connect(drupagram_account_load($instagram_uid));
+}

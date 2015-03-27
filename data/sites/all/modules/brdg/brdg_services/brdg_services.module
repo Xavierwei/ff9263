@@ -1,0 +1,455 @@
+<?php
+/**
+ * @file
+ */
+
+define('RESOURCE_PICTURE', 1);
+define('RESOURCE_SOUND', 2);
+define('RESOURCE_VIDEO', 3);
+
+// Email template name
+define("EMAIL_COMMENT_APPROVE", 'comment_approve_email');
+
+/**
+ * Implements hook_services_resources().
+ */
+function brdg_services_services_resources() {
+	$definitions = array(
+		'node' => array(
+			'actions' => array(
+				'pre_next_node' => array(
+					'help' => t('Get list of nodes that pre and next current node with nid'),
+					'callback' => '_node_pre_next_index_node',
+					'access callback' => 'static_true',
+					'args' => array(
+						array(
+							'name' => 'nid',
+							'type' => 'int',
+							'optional' => FALSE,
+							'source' => 'data'
+						),
+						array(
+							'name' => 'resource_type',
+							'type' => 'int',
+							'optional' => TRUE,
+							'source' => 'data',
+						),
+						array(
+							'name' => 'number',
+							'type' => 'int',
+							'optional' => TRUE,
+							'source' => 'data',
+							'default value' => 10,
+						),
+					),
+				),
+                                                            'likeit' => array(
+					'help' => t('Like it'),
+					'callback' => '_likeit',
+					'access callback' => 'static_true',
+					'args' => array(
+						array(
+							'name' => 'nid',
+							'type' => 'int',
+							'optional' => FALSE,
+							'source' => 'data'
+						),
+					),
+				),
+                'statistics_list' => array(
+                    'help' => '.',
+                    'callback' => '_user_statistics_list',
+                    'access callback' => 'static_true',
+                    'args' => array(
+                        array(
+                            'name' => 'order',
+                            'type' => 'int',
+                            'optional' => TRUE,
+                            'source' => 'data',
+                            'default' => ORDER_DESC,
+                        ),
+                        array(
+                            'name' => 'page',
+                            'type' => 'int',
+                            'optional' => TRUE,
+                            'source' => 'data',
+                            'default' => 1,
+                        ),
+                        array(
+                            'name' => 'pagenum',
+                            'type' => 'int',
+                            'optional' => TRUE,
+                            'source' => 'data',
+                            'default' => 10,
+                        ),
+                    ),
+                ),
+			),
+		),
+	);
+
+	$definitions['comment'] = array();
+
+	return $definitions;
+}
+
+
+function _likeit($data) {
+        //print_r($data['nid']);
+        $node = node_load($data['nid']);
+        $node->field_anonymous_flaged[LANGUAGE_NONE][0]['value'] += 1;
+        node_save($node);
+        return (array('count' => $node->field_anonymous_flaged[LANGUAGE_NONE][0]['value']));
+}
+
+
+/**
+ * Services resource callback for "statistics_list"
+ */
+/**
+ * Services resource callback for "statistics_list"
+ */
+function _user_statistics_list($params) {
+    $order = isset($params['order'])? $params['order']: 'count';
+    $page = isset($params['page'])? $params['page']: 1;
+    $pagenum = isset($params['pagenum'])? $params['pagenum']: 10;
+    $ts_s = isset($params['ts_s']) ? $params['ts_s']: 0;
+    $ts_s_date = date("Y-m-d h:i:s)", $ts_s);
+
+    $sql = "SELECT MAX(node.nid) as nid, count(node.nid) as count, sum(comment_count) as comments,sum(field_anonymous_flaged_value) as likes, user_id.field_post_owed_user_target_id as uid
+    FROM node
+    left join node_comment_statistics as ncs on ncs.nid = node.nid
+    left join field_data_field_anonymous_flaged as flag on flag.entity_id = node.nid
+    left join field_data_field_post_owed_user as user_id on user_id.entity_id = node.nid
+    left join field_data_field_post_date as post_date on post_date.entity_id = node.nid
+    WHERE post_date.field_post_date_value > :ts_s
+    GROUP BY field_post_owed_user_target_id
+    ORDER BY $order DESC";
+    $query = db_query($sql, array(":ts_s" => $ts_s_date));
+
+
+    $uids = array();
+    $node = array();
+    $node_counts = array();
+    $comments = array();
+    $flags = array();
+    $users = array();
+    foreach ($query as $result) {
+        if ($result->uid) {
+            $_node = node_load($result->nid);
+            $_img = $_node->field_media_image['und'][0][uri];
+            $_img = image_style_url('150_150',$_img);
+            $users[] = user_load($result->uid);
+            $node[] = $_img;
+            $node_counts[] = $result->count;
+            $comments[] = $result->comments;
+            $flags[] = $result->likes;
+        }
+    }
+    $start = ($page - 1) * $pagenum;
+    $ret_uids = array_slice($uids, $start, $pagenum);
+
+//    $str_uids = implode(',',$uids);
+//    $sql = "select sum(comment_count) as comments,users.uid as userid
+//    from node_comment_statistics as ncs
+//    left join node as n on ncs.nid = n.nid
+//    left join field_data_field_post_owed_user owned on owned.entity_id = n.nid
+//    left join users on owned.field_post_owed_user_target_id = users.uid
+//    where users.uid in($str_uids)
+//    group by users.uid
+//    ORDER BY FIELD(`userid`,$str_uids)";
+
+//    $query = db_query($sql);
+//    foreach ($query as $result) {
+//        $comments[$result->userid] = $result->comments;
+//    }
+
+//    $sql = "select sum(field_anonymous_flaged_value) as flags,users.uid as userid
+//    from field_data_field_anonymous_flaged as flag
+//    left join node as n on flag.entity_id = n.nid
+//    left join field_data_field_post_owed_user owned on owned.entity_id = n.nid
+//    left join users on owned.field_post_owed_user_target_id = users.uid
+//    where users.uid in($str_uids)
+//    group by users.uid
+//    ORDER BY FIELD(`userid`,$str_uids)";
+
+//    $query = db_query($sql);
+//    $flags = array();
+//    foreach ($query as $result) {
+//        $flags[$result->userid] = $result->flags;
+//    }
+
+    return array('users' => $users, 'total' => count($uids), 'node_statictis' => $node_counts, 'node' => $node, 'comments' => $comments, 'like' => $flags);
+}
+
+/**
+ * Services resource callback for "pre_next_node"
+ */
+function _node_pre_next_index_node($data) {
+	$nid = $data['nid'];
+	$node = node_load($nid);
+	$number = isset($data['number']) ? $data['number'] :10;
+	$resource_type = isset($data['resource_type']) ? $data['resource_type'] : NULL;
+    $city = isset($data['city']) ? $data['city'] : NULL;
+    $thumbnail = isset($data['thumbnail']) ? $data['thumbnail'] : 0;
+	if ($resource_type == RESOURCE_PICTURE) {
+		$allowed_media = "Image";
+	}
+	elseif ($resource_type == RESOURCE_VIDEO) {
+		$allowed_media = "Video";
+	}
+	elseif ($resource_type == RESOURCE_SOUND) {
+		$allowed_media = "Sound";
+	}
+	if (isset($allowed_media)) {
+		$media_type = brdg_core_get_media_type($allowed_media);
+	}
+	// Pre
+	$query = new EntityFieldQuery();
+	$query->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'content_from_source')
+		->propertyCondition('status', 1)
+		->fieldCondition('field_post_date', 'value', $node->field_post_date[LANGUAGE_NONE][0]['value'], '<')
+		->fieldCondition('body', 'value', '%RT @%', 'not like')
+		->fieldOrderBy('field_post_date', 'value', 'DESC');
+	if (isset($allowed_media)) {
+		$query->fieldCondition("field_media_type", 'tid', $media_type->tid);
+	}
+    if (isset($city)) {
+        $query->fieldCondition("field_user_city", 'value', $city);
+    }
+	$query_results = $query
+		->range(0, $number)
+		->execute();
+	$pre_nids =  array_keys($query_results['node']);
+	$pre_nodes = node_load_multiple($pre_nids);
+	
+	// Next
+	$query = new EntityFieldQuery();
+	$query->entityCondition('entity_type', 'node')
+		->entityCondition('bundle', 'content_from_source')
+		->propertyCondition('status', 1)
+		->fieldCondition('field_post_date', 'value', $node->field_post_date[LANGUAGE_NONE][0]['value'], '>')
+        ->fieldCondition('body', 'value', '%RT @%', 'not like')
+		->fieldOrderBy('field_post_date', 'value', 'ASC');
+	if (isset($allowed_media)) {
+		$query->fieldCondition("field_media_type", 'tid', $media_type->tid);
+	}
+	$query_results = $query
+		->range(0, $number)
+		->execute();
+	$next_nids =  array_keys($query_results['node']);
+	$next_nodes = node_load_multiple($next_nids);
+
+	return (array('pre' => brdg_services_helper_process_node($pre_nodes,$thumbnail), 'next' => brdg_services_helper_process_node($next_nodes,$thumbnail), 'current' => brdg_services_helper_process_node($node,$thumbnail)));
+}
+
+// Process return of pre_next_node services
+function brdg_services_helper_process_node($nodes,$thumbnail) {
+	if (is_object($nodes) && isset($nodes->nid)) {
+		$processing_nodes = array($nodes);
+	}
+	else {
+		$processing_nodes = $nodes;
+	}
+	if (!is_array($processing_nodes)) {
+		return $nodes;
+	}
+	$tmp_nodes = array();
+	foreach ($processing_nodes as $node) {
+		if (!is_object($node)) continue;
+		$tmp_node = new stdClass;
+		$tmp_node->nid = $node->nid;
+		$tmp_node->field_body = $node->body[LANGUAGE_NONE][0]['value'];
+		$tmp_node->field_user_name = $node->field_from_user_name[LANGUAGE_NONE][0]['value'];
+		$tmp_node->field_user_profile_image = 
+			file_create_url($node->field_from_user_profile_image[LANGUAGE_NONE][0]['uri']);
+
+
+        if($thumbnail)
+        {
+            $tmp_node->field_media_image =
+                image_style_url('400_400',$node->field_media_image[LANGUAGE_NONE][0]['uri']);
+        }
+        else
+        {
+            $tmp_node->field_media_image =
+                file_create_url($node->field_media_image[LANGUAGE_NONE][0]['uri']);
+        }
+
+
+		$tmp_node->post_date = $node->field_post_date[LANGUAGE_NONE][0]['value'];
+		$tmp_node->field_sound = $node->field_sound[LANGUAGE_NONE][0]['value'];
+
+        if($thumbnail)
+        {
+            $tmp_node->field_sound_thumbnail =
+                image_style_url('400_400',$node->field_sound_thumbnail[LANGUAGE_NONE][0]['uri']);
+        }
+        else
+        {
+            $tmp_node->field_sound_thumbnail =
+                file_create_url($node->field_sound_thumbnail[LANGUAGE_NONE][0]['uri']);
+        }
+
+
+		$source_type = taxonomy_term_load($node->field_source_type[LANGUAGE_NONE][0]['tid']);
+		$tmp_node->source_type = $source_type->name;
+		$tmp_node->field_video = $node->field_video[LANGUAGE_NONE][0]['value'];
+
+
+        if($thumbnail)
+        {
+            $tmp_node->field_video_thumbnail =
+                image_style_url('400x400_2',$node->field_video_thumbnail[LANGUAGE_NONE][0]['uri']);
+        }
+        else
+        {
+            $tmp_node->field_video_thumbnail =
+                file_create_url($node->field_video_thumbnail[LANGUAGE_NONE][0]['uri']);
+        }
+		// flag
+		$flag = flag_get_flag('like');
+		$record = $flag->get_count($node->nid);
+		$tmp_node->field_flag_counter = $record;
+
+		$tmp_node->field_user_city = $node->field_user_city[LANGUAGE_NONE][0]['value'];
+		$tmp_node->field_anonymous_flaged = $node->field_anonymous_flaged[LANGUAGE_NONE][0]['value'];
+		array_push($tmp_nodes, $tmp_node);
+	}
+
+	if (!is_array($nodes)) {
+		return array_shift($tmp_nodes);
+	}
+	return $tmp_nodes;
+}
+
+function static_true() {
+	return TRUE;
+}
+
+// add test js
+function brdg_services_init() {
+	drupal_add_js(drupal_get_path('module','brdg_services').'/brdg_services.test.js');
+}
+
+/**
+ * Implements hook_menu()
+ */
+function brdg_services_menu() {
+	$items = array();
+	$items['test_brdg_update_user'] = array(
+		'page callback' => 'test_brdg_update_user_page',
+		'access callback' => TRUE,
+	);
+	$items['brdg_services_update_user_picture'] = array(
+		'page callback' => 'update_user_picture',
+		'access callback' => 'brdg_user_edit_access',
+	);
+
+	$items['brdg_comment/approve/%comment'] = array(
+		'page callback' => 'update_comment_status',
+		'page arguments' => array(2),
+		'access callback' => TRUE,
+	);
+
+	return $items;
+}
+
+/**
+ * Menu callback
+ */
+function update_comment_status($comment, $token = '') {
+	$token = @$_GET['token'];
+	$comment->field_published[LANGUAGE_NONE][0]['value'] = 1;
+	$comment->status = 1; // publish this comment.
+	comment_save($comment);
+	drupal_goto("comment-validated", array(
+		"query" => array('cid' => $comment->nid )
+	));
+}
+
+// Services callback for update user picture
+function brdg_services_update_user_picture() {
+	$uid = $_POST['uid'];
+
+  	$validators = array(
+    	'file_validate_extensions' =>  array('jpg', 'jpeg', 'png'),
+    	'file_validate_size' => array(0 => parse_size(variable_get('user_picture_file_size', '30'))),
+  	);
+
+	// Let the file module handle the upload and moving.
+	if (!$file = file_save_upload('picture_upload', $validators, FALSE, FILE_EXISTS_RENAME) ) {  	
+		return bm_services_error(t('Failed to upload file. @upload', array('@upload' => $field_name)), 406);
+	}
+	else {
+		$edit_user = user_load($uid);
+		$edit_user->picture = $file;
+		user_save($edit_user);
+
+		print json_encode(array('user' => $edit_user, 'uri' => file_create_url($edit_user->picture->uri)));
+	}
+	die();
+}
+
+// Menu access callback for user edit services
+function brdg_user_edit_access() {
+  $uid = isset($_POST['uid']) ? $_POST['uid'] : 0;
+  if (user_edit_access(user_load($uid))) {
+  	return TRUE;
+  }
+  return FALSE;
+}
+
+// Callback for update user page
+function test_brdg_update_user_page() {
+    drupal_add_js('misc/jquery.form.js');
+	$html = file_get_contents(drupal_get_path('module', 'brdg_services').'/brdg_services.update_user.html');
+	return $html;
+}
+
+/**
+ * Implements hook_form_alter()
+ */
+//function brdg_services_form_alter(&$form, $form_state, $form_id) {
+//	if ($form_id == 'comment_node_content_from_source_form') {
+//		//$form['#validate'][] = 'brdg_services_validate_comment';
+//		$form['field_published']['#access'] = FALSE;
+//	}
+//}
+
+//Comment validator of  content_from_source node comment form
+function brdg_services_validate_comment($form, &$form_state) {
+	// $email = $form_state['values']['field_email'][LANGUAGE_NONE][0]['value'];
+ 	
+	// if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+	// 	form_set_error('field_email', t("Email is wrong"));
+	// }
+}
+
+/**
+ * Implements hook_comment_insert()
+ */
+function brdg_services_comment_insert($comment) {
+//	$email = $comment->field_email[LANGUAGE_NONE][0]['value'];
+//	if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+//		// send email to poster to prevent spam
+//		$ret = pet_send_mail(EMAIL_COMMENT_APPROVE, array(
+//				array('mail' => $email, 'uid' => 0),
+//				array('mail' => "xxx@xxx.com", 'uid' => 0, 'cid' => $comment->cid),
+//			),
+//			array('nid' => $comment->nid, 'uid' => 0)
+//		);
+//	}
+
+    $comment->field_published[LANGUAGE_NONE][0]['value'] = 1;
+    $comment->status = 1; // publish this comment.
+    comment_save($comment);
+}
+
+/**
+ * Implements hook_pet_substitutions_alter()
+ */
+//function brdg_services_pet_substitutions_alter(&$substitutions, $params) {
+//	$substitutions['comment'] = comment_load($params['pet_recipients'][1]['cid']);
+//}

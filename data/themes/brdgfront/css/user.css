@@ -1,0 +1,69 @@
+body {background:#000;}
+.page-user #content {border-top-left-radius:0;background:#000;}
+.page-user #header {text-align:center;padding:30px 0;margin:0;background:#000;border:none;}
+.page-user #sidebar {display:none;}
+.page-user #breadcrumb {display:none;}
+.page-user #content-header {display:none;}
+
+.page-user #content {width:600px;margin:0 auto;}
+.page-user #tabs{background:#000;height:44px;margin:0 0 40px 0;border-bottom:1px solid #333;}
+.page-user #tabs ul {float:left;margin:0 0 0 160px;}
+.page-user #tabs ul li:last-child {display:none;}
+.page-user #tabs ul a {padding:8px 20px 0 20px;font-size:11px;background:000;border:none;color:#666;font-weight:normal;}
+.page-user #tabs ul a:hover,.page-user #tabs ul a.active {color:#fff;}
+.page-user .element-invisible {display:none;}
+
+.page-user #block-system-navigation {display:none;}
+.page-user .description  {display:none;}
+.page-user .item-list {display:none;}
+.page-user form {padding:0 0 0 100px;}
+.page-user form label {font-size:12px;color:#eee;margin:0 0 5px 0; text-transform:uppercase;}
+.page-user form .form-text {background:#222;width:340px;border:1px solid #333;padding:6px 4px;color:#fff; font-family:Arial, Helvetica, sans-serif;font-size:12px;border-radius:0;}
+.page-user form .form-text:focus {background:#333;}
+.page-user form .form-item {margin:0;padding:0; position:relative;}
+.page-user form .form-item label.error { position:absolute;top:0;left:39px;font-size:11px;color:#777; text-transform:none;width:311px;text-align:right;}
+.page-user form .form-item input.error {border:1px solid #777;}
+.page-user form .form-required {color:#888;}
+.page-user form .form-actions {background:none;border:none;margin:10px 0;padding:0;}
+
+.page-user form .form-submit {background:#222;border:1px solid #333;color:#eee;padding:4px 10px; text-transform:uppercase;border-radius:0;font-size:11px;}
+.page-user form .form-submit:hover {background:#111;border:1px solid #222;color:#fff;}
+
+.page-user form .form-submit,.page-user #tabs ul a {-webkit-transition:all 0.2s ease-out;-moz-transition:all 0.2s ease-out;transition:all 0.2s ease-out;}
+.page-user .password-strength {display:none;}
+.page-user form .edit-actions {margin:0;padding:0;}
+#user-profile-form {padding-top:40px;}
+.collapse-processed {}
+#user-register-form #edit-picture {display:none;}
+#user-register-form .description {display:none;height:0;overflow:hidden;padding:0;margin:0;border:none;}
+.page-user select {width:350px;padding:8px 5px;height:38px;background:#222;border:1px solid #333;color:#eee;}
+.page-user select option {color:#eee;}
+.password-confirm {display:none;}
+
+#user-login #edit-submit {margin:0 auto;}
+
+.logged-in #tabs {display:none;}
+.logged-in #edit-submit {margin:0;}
+
+input:-webkit-autofill {background:#fff;}
+
+
+#edit-picture,#edit-timezone,#edit-field-email-validated {display:none;} 
+#logout { position:absolute;top:15px;right:15px;color:#fff;font-size:12px;}
+
+.page-user form .form-text  {-webkit-transition:all 0.4s linear;-moz-transition:all 0.4s linear;transition:all 0.4s linear;}
+.page-user-edit .form-item-mail {display:none;}
+.page-user-edit div.form-item div.password-suggestions {border:none;height:0;overflow:hidden;margin:0;padding:0;}
+#edit-field-twitter-screen-name {margin:10px 0 0;}
+
+.node-type-system-page #header {text-align:center;padding:30px 0;margin:0;background:#000;border:none;}
+.node-type-system-page .content {text-align:center;color:#999;font-size:12px;margin:50px 0 0;}
+.node-type-system-page .content strong {color:#fff;font-size:14px;}
+.node-type-system-page a {color:#666;}
+.node-type-system-page a:hover {color:#fff;}
+
+.page-user div.selector span {width:313px;}
+.page-user div.selector span {color:#eee;}
+
+div.messages {background:#444;border:#555;color:#fff;font-size:11px;}
+div.messages a {color:#fff;}

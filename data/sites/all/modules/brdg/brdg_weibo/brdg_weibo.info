@@ -1,0 +1,5 @@
+name = BRDG Weibo
+description = Fetch content with tag from weibo.
+package = brdg
+core = 7.x
+dependencies[] = sinaweibo

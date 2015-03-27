@@ -1,0 +1,8 @@
+name = BRDG Twitter
+description = Fetch content with tag from twitter.
+package = brdg
+core = 7.x
+dependencies[] = twitter
+dependencies[] = brdg_core
+dependencies[] = brdg_soundcloud
+
